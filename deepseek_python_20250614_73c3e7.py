@@ -72,7 +72,7 @@ SUPPORT_PHOTO_URL = "https://i.ibb.co/zhCxKY1n/Chat-GPT-Image-9-Juni-2025-21-12-
 USERNAME_INPUT_PHOTO_URL = "https://i.ibb.co/9CsNmQ5/Chat-GPT-Image-9-Juni-2025-21-09-14.png"
 CURRENCY_CHOICE_PHOTO_URL = "https://i.ibb.co/mCJsS2tJ/Chat-GPT-Image-9-2025-21-05-47.png"
 PROMO_PHOTO_URL = "https://i.ibb.co/vCH6qkWf/Chat-GPT-Image-10-2025-12-28-53.png"
-INSTRUCTIONS_PHOTO_URL = "https://i.ibb.co/4sZ2Tk9f/Chat-GPT-Image-10-2025-12-28-53.png"
+INSTRUCTIONS_PHOTO_URL = "https://i.ibb.co/G3MDwCyT/Chat-GPT-Image-14-2025-22-34-51.png"
 
 # Хранилище данных пользователей
 user_data_store = {}
