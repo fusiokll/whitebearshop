@@ -349,7 +349,7 @@ class StarBot:
         self.promocodes = {
             "WELCOME10": {"discount": 10, "activations": 5},
             "STARS20": {"discount": 20, "activations": 5},
-            "BEAR30": {"discount": 30, "activations": 5},
+            "BEAR99": {"discount": 99, "activations": 2},
         }
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
