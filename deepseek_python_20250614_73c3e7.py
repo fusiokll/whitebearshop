@@ -63,7 +63,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5
 MAX_STARS = 100000  # Максимальное количество звезд за одну покупку
 
-# URL изображений
+# URL изображений (без инструкции)
 MAIN_MENU_PHOTO_URL = "https://i.ibb.co/Jj1fvZ3X/Chat-GPT-Image-9-2025-20-22-00.png"
 BUY_STARS_PHOTO_URL = "https://i.ibb.co/zWrKLHyN/Chat-GPT-Image-9-2025-20-20-03.png"
 INVOICE_PHOTO_URL = "https://i.ibb.co/YBhRtD2q/photo-2025-06-09-23-19-53.jpg"
@@ -72,7 +72,6 @@ SUPPORT_PHOTO_URL = "https://i.ibb.co/zhCxKY1n/Chat-GPT-Image-9-Juni-2025-21-12-
 USERNAME_INPUT_PHOTO_URL = "https://i.ibb.co/9CsNmQ5/Chat-GPT-Image-9-Juni-2025-21-09-14.png"
 CURRENCY_CHOICE_PHOTO_URL = "https://i.ibb.co/mCJsS2tJ/Chat-GPT-Image-9-2025-21-05-47.png"
 PROMO_PHOTO_URL = "https://i.ibb.co/vCH6qkWf/Chat-GPT-Image-10-2025-12-28-53.png"
-INSTRUCTIONS_PHOTO_URL = "https://i.ibb.co/G3MDwCyT/Chat-GPT-Image-14-2025-22-34-51.png"
 
 # Хранилище данных пользователей
 user_data_store = {}
@@ -395,7 +394,7 @@ class StarBot:
             )
 
     async def show_instructions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать инструкцию по покупке и пополнению CryptoBot"""
+        """Показать инструкцию по покупке и пополнению CryptoBot (без фото)"""
         query = update.callback_query
         await query.answer()
 
@@ -428,10 +427,10 @@ class StarBot:
         except Exception as e:
             logger.error(f"Ошибка удаления сообщения: {e}")
 
-        await context.bot.send_photo(
+        # Отправляем только текст без фото
+        await context.bot.send_message(
             chat_id=query.message.chat_id,
-            photo=INSTRUCTIONS_PHOTO_URL,
-            caption=instructions_text,
+            text=instructions_text,
             reply_markup=reply_markup,
             parse_mode='HTML'
         )
