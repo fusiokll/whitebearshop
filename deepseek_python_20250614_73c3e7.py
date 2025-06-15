@@ -349,8 +349,11 @@ class StarBot:
         self.promocodes = {
             "WELCOME10": {"discount": 10, "activations": 5},
             "STARS20": {"discount": 20, "activations": 5},
-            "BEAR99": {"discount": 99, "activations": 2},
+            "BEAR30": {"discount": 30, "activations": 5},
         }
+        
+        # Для отслеживания обрабатываемых платежей
+        self.processing_payments = set()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Обработчик команды /start с фото"""
@@ -675,7 +678,8 @@ class StarBot:
                 'amount_rub': amount * self.fragment_client.PRICE_PER_STAR * (1 - discount_percent / 100),
                 'amount_crypto': float(invoice_data['amount']),
                 'discount_percent': discount_percent,
-                'promo_code': promo_code  # Используем переданный промокод
+                'promo_code': promo_code,  # Используем переданный промокод
+                'processed': False  # Добавляем флаг обработки
             }
             
             # Формируем сообщение для пользователя с указанием получателя
@@ -778,6 +782,11 @@ class StarBot:
         query = update.callback_query
         await query.answer()
 
+        # Проверяем, обрабатывается ли платеж в данный момент
+        if payment_id in self.processing_payments:
+            await query.edit_message_caption(caption="⌛ Платеж уже проверяется. Пожалуйста, подождите...", parse_mode='HTML')
+            return
+
         # Показываем уведомление о начале проверки
         if query.message.photo:
             await query.edit_message_caption(caption="🔄 Проверяем статус платежа...", parse_mode='HTML')
@@ -801,6 +810,8 @@ class StarBot:
                 )
             return
         
+        # Помечаем платеж как обрабатываемый
+        self.processing_payments.add(payment_id)
         try:
             endpoint = f"https://pay.crypt.bot/api/getInvoices?invoice_ids={payment_id}"
             headers = {"Crypto-Pay-API-Token": self.fragment_client.cryptobot_token}
@@ -852,7 +863,11 @@ class StarBot:
                         parse_mode='HTML'
                     )
             else:
-                payment_data = self.pending_payments[payment_id]
+                payment_data = self.pending_payments.get(payment_id, {})
+                if not payment_data:
+                    await query.edit_message_text("❌ Информация о платеже утеряна")
+                    return
+                    
                 price_crypto = payment_data['amount_crypto']
                 price_rub = payment_data['amount_rub']
                 currency = payment_data['currency']
@@ -918,6 +933,10 @@ class StarBot:
                     "Ошибка при проверке платежа. Попробуйте позже.",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="buy_stars")]])
                 )
+        finally:
+            # Снимаем блокировку
+            if payment_id in self.processing_payments:
+                self.processing_payments.remove(payment_id)
 
     async def _process_payment(self, payment_id: str) -> tuple:
         """Обработка успешного платежа с возвратом статуса и сообщения"""
@@ -925,6 +944,14 @@ class StarBot:
             return False, "Платеж не найден"
         
         payment_data = self.pending_payments[payment_id]
+        
+        # Проверяем, не был ли платеж уже обработан
+        if payment_data.get('processed', False):
+            return False, "❌ Платеж уже был обработан ранее"
+        
+        # Помечаем платеж как обработанный
+        payment_data['processed'] = True
+        self.pending_payments[payment_id] = payment_data
         
         try:
             # Определяем получателя звезд
@@ -999,6 +1026,7 @@ class StarBot:
                 
                 self.fragment_client._notify_admin(admin_msg)
                 
+                # Удаляем платеж из ожидающих только после успешной отправки
                 del self.pending_payments[payment_id]
                 
                 # Формируем сообщение для пользователя
@@ -1047,7 +1075,12 @@ class StarBot:
         while True:
             try:
                 logger.info("Автопроверка платежей...")
-                for payment_id in list(self.pending_payments.keys()):
+                # Создаем копию списка для безопасной итерации
+                payment_ids = list(self.pending_payments.keys())
+                for payment_id in payment_ids:
+                    # Пропускаем обрабатываемые платежи
+                    if payment_id in self.processing_payments:
+                        continue
                     await self.check_single_payment(payment_id)
             except Exception as e:
                 logger.error(f"Ошибка автопроверки: {str(e)}")
@@ -1056,6 +1089,12 @@ class StarBot:
 
     async def check_single_payment(self, payment_id: str):
         """Проверка конкретного платежа"""
+        # Пропускаем обрабатываемые платежи
+        if payment_id in self.processing_payments:
+            return
+            
+        # Помечаем платеж как обрабатываемый
+        self.processing_payments.add(payment_id)
         try:
             endpoint = f"https://pay.crypt.bot/api/getInvoices?invoice_ids={payment_id}"
             headers = {"Crypto-Pay-API-Token": self.fragment_client.cryptobot_token}
@@ -1075,8 +1114,12 @@ class StarBot:
                 # Удаляем истекшие платежи
                 if payment_id in self.pending_payments:
                     del self.pending_payments[payment_id]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка при автоматической проверке платежа {payment_id}: {str(e)}")
+        finally:
+            # Снимаем блокировку
+            if payment_id in self.processing_payments:
+                self.processing_payments.remove(payment_id)
 
     async def start_rate_updater(self):
         """Запуск фоновой задачи обновления курса TON"""
