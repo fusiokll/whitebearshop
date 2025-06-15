@@ -1,32 +1,23 @@
 import subprocess
 import sys
 import os
-import math  # Добавлен импорт для математических расчетов
+import math
 
 try:
-    import requests # type: ignore
-    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup # type: ignore
-    from telegram.ext import Application, CommandHandler, CallbackQueryHandler # type: ignore
+    import requests
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
+    from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 except ImportError:
     print("Установка необходимых зависимостей...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
     print("Зависимости установлены. Перезапустите бот.")
     sys.exit(1)
 
-import requests # type: ignore
+import requests
 import logging
 import time
 import asyncio
-from typing import Optional, Dict, Any, Union
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery # type: ignore
-from telegram.ext import ( # type: ignore
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    CallbackQueryHandler
-)
+from typing import Optional, Dict, Any
 
 # Настройка логирования
 logging.basicConfig(
@@ -44,7 +35,7 @@ API_KEY = os.getenv("API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CRYPTOBOT_TOKEN = os.getenv("CRYPTOBOT_TOKEN")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER")
-MNEMONICS = os.getenv("MNEMONICS", "").split()  # Разделяем строку на список слов
+MNEMONICS = os.getenv("MNEMONICS", "").split()
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 
 # Проверка наличия обязательных переменных
@@ -62,9 +53,9 @@ if not all([API_KEY, TELEGRAM_TOKEN, CRYPTOBOT_TOKEN, PHONE_NUMBER, MNEMONICS, A
 
 MAX_RETRIES = 3
 RETRY_DELAY = 5
-MAX_STARS = 100000  # Максимальное количество звезд за одну покупку
+MAX_STARS = 100000
 
-# URL изображений (без инструкции)
+# URL изображений
 MAIN_MENU_PHOTO_URL = "https://i.ibb.co/Jj1fvZ3X/Chat-GPT-Image-9-2025-20-22-00.png"
 BUY_STARS_PHOTO_URL = "https://i.ibb.co/zWrKLHyN/Chat-GPT-Image-9-2025-20-20-03.png"
 INVOICE_PHOTO_URL = "https://i.ibb.co/YBhRtD2q/photo-2025-06-09-23-19-53.jpg"
@@ -91,9 +82,9 @@ class FragmentAPIClient:
         })
         self.auth_token: Optional[str] = None
         self.MIN_STARS = 50
-        self.PRICE_PER_STAR = 1.45  # Цена за 1 звезду в рублях
-        self.ton_rate = 200  # Начальный курс TON/RUB
-        self.usdt_rate = 90  # Начальный курс USDT/RUB
+        self.PRICE_PER_STAR = 1.45
+        self.ton_rate = 200
+        self.usdt_rate = 90
         self.last_rate_update = 0
 
     async def update_rates(self):
@@ -123,19 +114,16 @@ class FragmentAPIClient:
             return False
 
     def get_ton_rate(self):
-        """Получение актуального курса TON"""
         if time.time() - self.last_rate_update > 3600:
             asyncio.create_task(self.update_rates())
         return self.ton_rate
 
     def get_usdt_rate(self):
-        """Получение актуального курса USDT"""
         if time.time() - self.last_rate_update > 3600:
             asyncio.create_task(self.update_rates())
         return self.usdt_rate
 
     def authenticate(self, phone_number: str, mnemonics: list[str]) -> bool:
-        """Аутентификация в Fragment API с повторными попытками"""
         endpoint = f"{self.base_url}/auth/authenticate/"
         payload = {
             "api_key": self.api_key,
@@ -170,7 +158,6 @@ class FragmentAPIClient:
                 return False
 
     def send_stars(self, username: str, quantity: int) -> Dict[str, Any]:
-        """Отправка звезд через JWT токен в соответствии с API Fragment"""
         if not self.auth_token:
             logger.error("Токен аутентификации отсутствует")
             return {"error": "Требуется аутентификация"}
@@ -235,19 +222,16 @@ class FragmentAPIClient:
         payload: Optional[str] = None,
         allow_comments: bool = True,
         allow_anonymous: bool = True,
-        discount_percent: int = 0  # Новый параметр для скидки
+        discount_percent: int = 0
     ) -> Dict[str, Any]:
-        """Создание инвойса в CryptoBot с учетом скидки"""
         if not self.cryptobot_token:
             raise ValueError("Требуется токен CryptoBot")
         
         if stars_amount < self.MIN_STARS:
             raise ValueError(f"Минимальное количество звезд для покупки: {self.MIN_STARS}")
 
-        # Расчет суммы в рублях с учетом скидки
         amount_rub = stars_amount * self.PRICE_PER_STAR * (1 - discount_percent / 100)
         
-        # Конвертация в выбранную валюту
         if asset == "TON":
             amount_asset = amount_rub / self.get_ton_rate()
         elif asset == "USDT":
@@ -265,7 +249,6 @@ class FragmentAPIClient:
         if formatted_amount == '':
             formatted_amount = '0'
         
-        # Формируем описание с учетом получателя и скидки
         desc = f"{description} ({stars_amount} звезд)"
         if discount_percent > 0:
             desc += f" со скидкой {discount_percent}%"
@@ -309,7 +292,6 @@ class FragmentAPIClient:
                 return {"error": error_msg}
 
     def _notify_admin(self, message: str) -> bool:
-        """Отправка уведомления админу по chat_id"""
         if not self.telegram_token:
             logger.warning("Telegram токен не указан")
             return False
@@ -359,11 +341,9 @@ class StarBot:
             "GOD99": {"discount": 99, "activations": 1}
         }
         
-        # Для отслеживания обрабатываемых платежей
         self.processing_payments = set()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Обработчик команды /start с фото"""
         user = update.effective_user
         welcome_text = (
             f"<b>Привет, {user.first_name}!</b>\n\n"
@@ -404,7 +384,6 @@ class StarBot:
             )
 
     async def show_instructions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать инструкцию по покупке и пополнению CryptoBot (без фото)"""
         query = update.callback_query
         await query.answer()
 
@@ -437,7 +416,6 @@ class StarBot:
         except Exception as e:
             logger.error(f"Ошибка удаления сообщения: {e}")
 
-        # Отправляем только текст без фото
         await context.bot.send_message(
             chat_id=query.message.chat_id,
             text=instructions_text,
@@ -446,7 +424,6 @@ class StarBot:
         )
 
     async def show_promo_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать экран ввода промокода"""
         query = update.callback_query
         await query.answer()
         context.user_data['state'] = 'ENTERING_PROMO'
@@ -464,7 +441,6 @@ class StarBot:
         )
 
     async def show_buy_options(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать меню покупки звёзд с фото"""
         query = update.callback_query
         await query.answer()
 
@@ -494,7 +470,6 @@ class StarBot:
         )
 
     async def show_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать профиль пользователя с фото"""
         query = update.callback_query
         await query.answer()
 
@@ -504,12 +479,10 @@ class StarBot:
             'transactions': []
         })
         
-        # Формируем текст истории транзакций
         transactions_text = ""
         transactions = user_data.get('transactions', [])
         if transactions:
             transactions_text = "\n\n📝 <b>История транзакций:</b>\n"
-            # Показываем последние 5 транзакций
             for i, t in enumerate(reversed(transactions[-5:]), start=1):
                 trans_line = f"{i}. {t['date']}: {t['stars']} звезд"
                 if t.get('recipient'):
@@ -523,7 +496,6 @@ class StarBot:
         else:
             transactions_text = "\n\n📝 У вас еще нет транзакций."
         
-        # Показываем активный промокод
         active_promo = ""
         if 'promo_code' in context.user_data:
             discount = context.user_data.get('discount_percent', 0)
@@ -556,7 +528,6 @@ class StarBot:
         )
 
     async def show_support(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать информацию о поддержке с фото"""
         query = update.callback_query
         await query.answer()
 
@@ -587,7 +558,6 @@ class StarBot:
         )
 
     async def request_friend_username(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Запрос username друга с изображением"""
         query = update.callback_query
         await query.answer()
 
@@ -606,7 +576,6 @@ class StarBot:
         )
 
     async def choose_currency(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Выбор валюты для оплаты с изображением"""
         query = update.callback_query
         await query.answer()
 
@@ -641,24 +610,18 @@ class StarBot:
         )
 
     async def process_buy_stars(self, message: Message, amount: int, currency: str, recipient: Optional[str] = None, discount_percent: int = 0, promo_code: Optional[str] = None):
-        """Создание инвойса для покупки звезд с учетом скидки"""
         try:
-            # Получаем username отправителя
             sender = message.from_user
             sender_username = sender.username if sender.username else sender.first_name
             
-            # Рассчитываем сумму в рублях с учетом скидки
             amount_rub = amount * self.fragment_client.PRICE_PER_STAR * (1 - discount_percent / 100)
             
-            # Конвертация в выбранную валюту
             if currency == "TON":
                 amount_asset = amount_rub / self.fragment_client.get_ton_rate()
             elif currency == "USDT":
                 amount_asset = amount_rub / self.fragment_client.get_usdt_rate()
             
-            # Проверка минимальной суммы после применения скидки
             if amount_asset < 0.01:
-                # Рассчитываем минимальное количество звезд для данной скидки
                 min_stars = math.ceil(0.01 * (self.fragment_client.get_ton_rate() if currency == "TON" else self.fragment_client.get_usdt_rate()) 
                                       / (self.fragment_client.PRICE_PER_STAR * (1 - discount_percent / 100)))
                 
@@ -669,7 +632,6 @@ class StarBot:
                 )
                 return
                 
-            # Создаем инвойс в CryptoBot
             invoice = self.fragment_client.create_cryptobot_invoice(
                 stars_amount=amount,
                 asset=currency,
@@ -697,7 +659,6 @@ class StarBot:
             payment_id = str(invoice_data['invoice_id'])
             pay_url = invoice_data['pay_url']
             
-            # Сохраняем информацию о платеже для последующей проверки
             self.pending_payments[payment_id] = {
                 'user_id': message.from_user.id,
                 'sender_username': sender_username,
@@ -707,11 +668,10 @@ class StarBot:
                 'amount_rub': amount_rub,
                 'amount_crypto': float(invoice_data['amount']),
                 'discount_percent': discount_percent,
-                'promo_code': promo_code,  # Используем переданный промокод
-                'processed': False  # Добавляем флаг обработки
+                'promo_code': promo_code,
+                'processed': False
             }
             
-            # Формируем сообщение для пользователя с указанием получателя
             payment_text = (
                 f"<b>💳 Оплата {amount} звезд</b>\n\n"
                 f"<b>Сумма к оплате:</b> {invoice_data['amount']} {currency}\n"
@@ -749,7 +709,6 @@ class StarBot:
             )
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик всех callback запросов"""
         query = update.callback_query
         data = query.data
 
@@ -769,14 +728,39 @@ class StarBot:
             payment_id = data.split("_")[1]
             await self.check_payment(update, context, payment_id)
         elif data == "buy_self":
-            # Очищаем данные о друге, если они есть
-            if 'friend_username' in context.user_data:
-                del context.user_data['friend_username']
+            # Сохраняем промокод при переходе между опциями
+            promo_code = context.user_data.get('promo_code')
+            discount_percent = context.user_data.get('discount_percent', 0)
+            
+            # Очищаем только данные о друге
+            keys_to_remove = ['friend_username', 'recipient', 'currency', 'state']
+            for key in keys_to_remove:
+                if key in context.user_data:
+                    del context.user_data[key]
+                    
+            # Восстанавливаем промокод
+            if promo_code:
+                context.user_data['promo_code'] = promo_code
+                context.user_data['discount_percent'] = discount_percent
+                
             context.user_data['recipient'] = None
             await self.choose_currency(update, context)
         elif data == "buy_friend":
-            # Убедимся, что очищаем предыдущие данные
-            context.user_data.clear()
+            # Сохраняем промокод при переходе между опциями
+            promo_code = context.user_data.get('promo_code')
+            discount_percent = context.user_data.get('discount_percent', 0)
+            
+            # Очищаем только данные о покупке
+            keys_to_remove = ['friend_username', 'recipient', 'currency', 'state']
+            for key in keys_to_remove:
+                if key in context.user_data:
+                    del context.user_data[key]
+                    
+            # Восстанавливаем промокод
+            if promo_code:
+                context.user_data['promo_code'] = promo_code
+                context.user_data['discount_percent'] = discount_percent
+                
             context.user_data['state'] = 'ENTERING_FRIEND_USERNAME'
             await self.request_friend_username(update, context)
         elif data == "currency_ton":
@@ -807,16 +791,13 @@ class StarBot:
             )
 
     async def check_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE, payment_id: str = None):
-        """Проверка платежа с улучшенными сообщениями"""
         query = update.callback_query
         await query.answer()
 
-        # Проверяем, обрабатывается ли платеж в данный момент
         if payment_id in self.processing_payments:
             await query.edit_message_caption(caption="⌛ Платеж уже проверяется. Пожалуйста, подождите...", parse_mode='HTML')
             return
 
-        # Показываем уведомление о начале проверки
         if query.message.photo:
             await query.edit_message_caption(caption="🔄 Проверяем статус платежа...", parse_mode='HTML')
         else:
@@ -839,7 +820,6 @@ class StarBot:
                 )
             return
         
-        # Помечаем платеж как обрабатываемый
         self.processing_payments.add(payment_id)
         try:
             endpoint = f"https://pay.crypt.bot/api/getInvoices?invoice_ids={payment_id}"
@@ -864,7 +844,6 @@ class StarBot:
             
             invoice = data['result']['items'][0]
             
-            # Перевод статусов на русский
             status_translation = {
                 'active': 'ожидает оплаты',
                 'paid': 'оплачен',
@@ -902,7 +881,6 @@ class StarBot:
                 currency = payment_data['currency']
                 pay_url = f"https://pay.crypt.bot/invoice/{payment_id}"
                 
-                # Детализированное сообщение о статусе с указанием получателя
                 payment_text = (
                     f"<b>ℹ️ Статус платежа</b>\n\n"
                     f"<b>ID платежа:</b> <code>{payment_id}</code>\n"
@@ -924,7 +902,6 @@ class StarBot:
                     keyboard = [
                         [InlineKeyboardButton("🔙 Назад", callback_data="buy_stars")]
                     ]
-                    # Удаляем истекший платеж
                     if payment_id in self.pending_payments:
                         del self.pending_payments[payment_id]
                 else:
@@ -963,27 +940,22 @@ class StarBot:
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="buy_stars")]])
                 )
         finally:
-            # Снимаем блокировку
             if payment_id in self.processing_payments:
                 self.processing_payments.remove(payment_id)
 
     async def _process_payment(self, payment_id: str) -> tuple:
-        """Обработка успешного платежа с возвратом статуса и сообщения"""
         if payment_id not in self.pending_payments:
             return False, "Платеж не найден"
         
         payment_data = self.pending_payments[payment_id]
         
-        # Проверяем, не был ли платеж уже обработан
         if payment_data.get('processed', False):
             return False, "❌ Платеж уже был обработан ранее"
         
-        # Помечаем платеж как обработанный
         payment_data['processed'] = True
         self.pending_payments[payment_id] = payment_data
         
         try:
-            # Определяем получателя звезд
             recipient_username = payment_data['recipient'] or payment_data['sender_username']
             
             result = self.fragment_client.send_stars(
@@ -999,7 +971,6 @@ class StarBot:
                         'transactions': []
                     }
                 
-                # Обновляем общее количество звезд только для покупок себе
                 if not payment_data['recipient']:
                     user_data_store[user_id]['total_stars'] += payment_data['stars_amount']
                 
@@ -1009,19 +980,14 @@ class StarBot:
                     'promo': "без скидки"
                 }
                 
-                # Уменьшаем счетчик активаций для промокода
                 promo_code = payment_data.get('promo_code')
                 if promo_code:
-                    # Обновляем информацию о промокоде
                     if promo_code in self.promocodes:
-                        # Уменьшаем счетчик активаций
                         self.promocodes[promo_code]["activations"] -= 1
                         
-                        # Формируем запись о промокоде
                         discount_percent = payment_data.get('discount_percent', 0)
                         transaction['promo'] = f"промокод {promo_code} ({discount_percent}%)"
                         
-                        # Уведомляем админа при последней активации
                         if self.promocodes[promo_code]["activations"] == 0:
                             admin_msg = (
                                 f"⚠️ Промокод <code>{promo_code}</code> израсходован!\n"
@@ -1035,7 +1001,6 @@ class StarBot:
                 
                 user_data_store[user_id]['transactions'].append(transaction)
                 
-                # Формируем сообщение для админа
                 admin_msg = (
                     f"✅ Успешная покупка:\n"
                     f"• Покупатель: @{payment_data['sender_username']}\n"
@@ -1055,10 +1020,8 @@ class StarBot:
                 
                 self.fragment_client._notify_admin(admin_msg)
                 
-                # Удаляем платеж из ожидающих только после успешной отправки
                 del self.pending_payments[payment_id]
                 
-                # Формируем сообщение для пользователя
                 if payment_data['recipient']:
                     user_msg = f"✅ {payment_data['stars_amount']} звезд отправлено @{payment_data['recipient']}!"
                 else:
@@ -1093,21 +1056,17 @@ class StarBot:
             return False, f"❌ Неожиданная ошибка: {str(e)}"
 
     async def start_auto_check(self):
-        """Запуск фоновой задачи проверки платежей"""
         if self.auto_check_task:
             self.auto_check_task.cancel()
             
         self.auto_check_task = asyncio.create_task(self.auto_check_payments())
 
     async def auto_check_payments(self):
-        """Автоматическая проверка платежей каждые 5 минут"""
         while True:
             try:
                 logger.info("Автопроверка платежей...")
-                # Создаем копию списка для безопасной итерации
                 payment_ids = list(self.pending_payments.keys())
                 for payment_id in payment_ids:
-                    # Пропускаем обрабатываемые платежи
                     if payment_id in self.processing_payments:
                         continue
                     await self.check_single_payment(payment_id)
@@ -1117,12 +1076,9 @@ class StarBot:
             await asyncio.sleep(300)
 
     async def check_single_payment(self, payment_id: str):
-        """Проверка конкретного платежа"""
-        # Пропускаем обрабатываемые платежи
         if payment_id in self.processing_payments:
             return
             
-        # Помечаем платеж как обрабатываемый
         self.processing_payments.add(payment_id)
         try:
             endpoint = f"https://pay.crypt.bot/api/getInvoices?invoice_ids={payment_id}"
@@ -1140,35 +1096,29 @@ class StarBot:
             if invoice['status'] == 'paid':
                 await self._process_payment(payment_id)
             elif invoice['status'] == 'expired':
-                # Удаляем истекшие платежи
                 if payment_id in self.pending_payments:
                     del self.pending_payments[payment_id]
         except Exception as e:
             logger.error(f"Ошибка при автоматической проверке платежа {payment_id}: {str(e)}")
         finally:
-            # Снимаем блокировку
             if payment_id in self.processing_payments:
                 self.processing_payments.remove(payment_id)
 
     async def start_rate_updater(self):
-        """Запуск фоновой задачи обновления курса TON"""
         while True:
             try:
                 await self.fragment_client.update_rates()
-                await asyncio.sleep(600)  # Обновлять курс каждый час
+                await asyncio.sleep(600)
             except Exception as e:
                 logger.error(f"Ошибка в задаче обновления курса: {str(e)}")
-                await asyncio.sleep(60)  # При ошибке ждем 10 минут перед повторной попыткой
+                await asyncio.sleep(60)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик текстовых сообщений"""
         user_data = context.user_data
         
-        # Обработка ввода промокода
         if user_data.get('state') == 'ENTERING_PROMO':
             promo = update.message.text.strip().upper()
             
-            # Проверяем наличие промокода и количество активаций
             if promo in self.promocodes and self.promocodes[promo]["activations"] > 0:
                 discount = self.promocodes[promo]["discount"]
                 user_data['promo_code'] = promo
@@ -1183,7 +1133,6 @@ class StarBot:
                 )
                 del user_data['state']
             else:
-                # Формируем сообщение об ошибке
                 error_msg = "❌ Неверный промокод"
                 if promo in self.promocodes and self.promocodes[promo]["activations"] <= 0:
                     error_msg = "❌ Промокод уже израсходован"
@@ -1194,15 +1143,12 @@ class StarBot:
                 )
             return
         
-        # Обработка ввода username друга
         if user_data.get('state') == 'ENTERING_FRIEND_USERNAME':
             friend_username = update.message.text.strip()
             
-            # Удаляем "@" если пользователь его ввел
             if friend_username.startswith('@'):
                 friend_username = friend_username[1:]
                 
-            # Простая валидация username
             if len(friend_username) < 5:
                 await update.message.reply_text(
                     "❌ Username должен содержать не менее 5 символов. Попробуйте снова:",
@@ -1210,11 +1156,9 @@ class StarBot:
                 )
                 return
                 
-            # Сохраняем username друга
             user_data['friend_username'] = friend_username
             user_data['state'] = 'CHOOSING_CURRENCY'
             
-            # Отправляем сообщение с выбором валюты
             currency_text = (
                 "<b>💱 Выберите валюту оплаты</b>\n\n"
                 f"Текущий курс:\n"
@@ -1238,7 +1182,6 @@ class StarBot:
             )
             return
 
-        # Обработка ввода количества звезд
         if user_data.get('state') == 'ENTERING_AMOUNT':
             user_input = update.message.text
             try:
@@ -1256,22 +1199,17 @@ class StarBot:
                     )
                     return
                 
-                # Очищаем состояние перед обработкой
                 del user_data['state']
                 
-                # Определяем получателя
                 recipient = None
                 if 'friend_username' in user_data:
                     recipient = user_data['friend_username']
                 
-                # Получаем валюту
                 currency = user_data.get('currency', 'TON')
                 
-                # Получаем скидку из промокода
                 discount_percent = user_data.get('discount_percent', 0)
                 promo_code = user_data.get('promo_code', None)
                 
-                # Обрабатываем покупку
                 await self.process_buy_stars(
                     update.message, 
                     amount, 
@@ -1281,27 +1219,18 @@ class StarBot:
                     promo_code
                 )
                 
-                # Удаляем промокод после использования
-                if 'promo_code' in user_data:
-                    del user_data['promo_code']
-                if 'discount_percent' in user_data:
-                    del user_data['discount_percent']
-                
             except ValueError:
                 await update.message.reply_text(
                     "❌ Пожалуйста, введите целое число. Попробуйте снова:",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="buy_stars")]])
                 )
         else:
-            # Обработка обычных сообщений
             await update.message.reply_text(
                 "Пожалуйста, используйте кнопки меню для взаимодействия с ботом.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Главное меню", callback_data="main_menu")]])
             )
 
 def run_bot():
-    """Функция для запуска бота"""
-    # Получаем значения из переменных окружения
     api_key = API_KEY
     telegram_token = TELEGRAM_TOKEN
     cryptobot_token = CRYPTOBOT_TOKEN
@@ -1317,14 +1246,12 @@ def run_bot():
     application.add_handler(CallbackQueryHandler(bot.handle_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
     
-    # Исправление предупреждения об event loop
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     
-    # Запуск фоновых задач
     if bot.auto_check_task is None:
         bot.auto_check_task = loop.create_task(bot.start_auto_check())
     if bot.rate_update_task is None:
