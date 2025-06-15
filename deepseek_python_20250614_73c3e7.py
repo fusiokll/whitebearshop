@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import os
+import math  # Добавлен импорт для математических расчетов
 
 try:
     import requests # type: ignore
@@ -347,9 +348,15 @@ class StarBot:
         
         # Словарь активных промокодов с количеством активаций
         self.promocodes = {
-            "WELCOME10": {"discount": 10, "activations": 5},
-            "STARS20": {"discount": 20, "activations": 5},
+            "WELCOME10": {"discount": 10, "activations": 10},
+            "STARS20": {"discount": 20, "activations": 10},
             "BEAR30": {"discount": 30, "activations": 5},
+            "MEGA40": {"discount": 40, "activations": 3},
+            "SUPER50": {"discount": 50, "activations": 3},
+            "ULTRA60": {"discount": 60, "activations": 2},
+            "EPIC70": {"discount": 70, "activations": 2},
+            "LEGEND80": {"discount": 80, "activations": 1},
+            "GOD99": {"discount": 99, "activations": 1}
         }
         
         # Для отслеживания обрабатываемых платежей
@@ -640,6 +647,28 @@ class StarBot:
             sender = message.from_user
             sender_username = sender.username if sender.username else sender.first_name
             
+            # Рассчитываем сумму в рублях с учетом скидки
+            amount_rub = amount * self.fragment_client.PRICE_PER_STAR * (1 - discount_percent / 100)
+            
+            # Конвертация в выбранную валюту
+            if currency == "TON":
+                amount_asset = amount_rub / self.fragment_client.get_ton_rate()
+            elif currency == "USDT":
+                amount_asset = amount_rub / self.fragment_client.get_usdt_rate()
+            
+            # Проверка минимальной суммы после применения скидки
+            if amount_asset < 0.01:
+                # Рассчитываем минимальное количество звезд для данной скидки
+                min_stars = math.ceil(0.01 * (self.fragment_client.get_ton_rate() if currency == "TON" else self.fragment_client.get_usdt_rate()) 
+                                      / (self.fragment_client.PRICE_PER_STAR * (1 - discount_percent / 100)))
+                
+                await message.reply_text(
+                    f"❌ После применения скидки {discount_percent}% сумма слишком мала для оплаты.\n"
+                    f"Минимальное количество звезд для вашей скидки: {min_stars}",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="buy_stars")]])
+                )
+                return
+                
             # Создаем инвойс в CryptoBot
             invoice = self.fragment_client.create_cryptobot_invoice(
                 stars_amount=amount,
@@ -675,7 +704,7 @@ class StarBot:
                 'recipient': recipient,
                 'stars_amount': amount,
                 'currency': currency,
-                'amount_rub': amount * self.fragment_client.PRICE_PER_STAR * (1 - discount_percent / 100),
+                'amount_rub': amount_rub,
                 'amount_crypto': float(invoice_data['amount']),
                 'discount_percent': discount_percent,
                 'promo_code': promo_code,  # Используем переданный промокод
